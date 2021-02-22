@@ -2,7 +2,6 @@ package gatt
 
 import (
 	"encoding/binary"
-	"net"
 
 	"github.com/currantlabs/gatt/linux"
 	"github.com/currantlabs/gatt/linux/cmd"
@@ -65,14 +64,20 @@ func NewDevice(opts ...Option) (Device, error) {
 
 func (d *device) Init(f func(Device, State)) error {
 	d.hci.AcceptMasterHandler = func(pd *linux.PlatData) {
-		a := pd.Address
-		c := newCentral(d.attrs, net.HardwareAddr([]byte{a[5], a[4], a[3], a[2], a[1], a[0]}), pd.Conn)
-		if d.centralConnected != nil {
-			d.centralConnected(c)
+		p := &peripheral{
+			d:     d,
+			pd:    pd,
+			l2c:   pd.Conn,
+			reqc:  make(chan message),
+			quitc: make(chan struct{}),
+			sub:   newSubscriber(),
 		}
-		c.loop()
-		if d.centralDisconnected != nil {
-			d.centralDisconnected(c)
+		if d.peripheralConnected != nil {
+			go d.peripheralConnected(p, nil)
+		}
+		p.loop()
+		if d.peripheralDisconnected != nil {
+			d.peripheralDisconnected(p, nil)
 		}
 	}
 	d.hci.AcceptSlaveHandler = func(pd *linux.PlatData) {
